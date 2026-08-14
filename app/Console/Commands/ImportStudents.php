@@ -157,30 +157,63 @@ class ImportStudents extends Command
         return self::SUCCESS;
     }
 
-    /** Header row is not row 1 in RPIIT's export — find it. */
+    /**
+     * RPIIT's export has three preamble rows before the real header, a UTF-8
+     * BOM, and Windows line endings. Read the whole file, normalise the line
+     * endings, then find the header by looking for a column we know must
+     * exist rather than matching the first cell exactly.
+     */
     private function readCsv(string $path): array
     {
-        $fh = fopen($path, 'r');
-        $header = null;
-        $rows = [];
+        $raw = file_get_contents($path);
+        if ($raw === false) {
+            return [];
+        }
 
-        while (($line = fgetcsv($fh)) !== false) {
+        // Strip BOM, normalise CRLF and lone CR to LF.
+        $raw = preg_replace('/^\xEF\xBB\xBF/', '', $raw);
+        $raw = str_replace(["\r\n", "\r"], "\n", $raw);
+
+        $lines  = preg_split('/\n/', $raw);
+        $header = null;
+        $rows   = [];
+
+        foreach ($lines as $line) {
+            if (trim($line) === '') {
+                continue;
+            }
+            $cells = str_getcsv($line);
+            $cells = array_map(fn ($c) => trim((string) $c), $cells);
+
             if ($header === null) {
-                $first = trim((string) ($line[0] ?? ''), " \t\n\r\0\x0B\xEF\xBB\xBF");
-                if (in_array($first, ['S.No', 'Student name'], true)) {
-                    $header = array_map(fn ($h) => trim((string) $h, " \t\n\r\0\x0B\xEF\xBB\xBF"), $line);
+                // The header is whichever row actually names the key columns.
+                if (in_array('Admission no.', $cells, true)
+                    || in_array('Student name', $cells, true)) {
+                    $header = $cells;
                 }
                 continue;
             }
-            if (count($line) < 3) {
+
+            if (count($cells) < 3) {
                 continue;
             }
+
             $rows[] = array_combine(
                 $header,
-                array_pad(array_slice($line, 0, count($header)), count($header), null)
+                array_pad(array_slice($cells, 0, count($header)), count($header), null)
             );
         }
-        fclose($fh);
+
+        if ($header === null) {
+            $this->error('Could not find a header row containing "Admission no." or "Student name".');
+            $this->line('First 5 non-empty lines seen:');
+            $shown = 0;
+            foreach ($lines as $l) {
+                if (trim($l) === '') { continue; }
+                $this->line('  '.substr($l, 0, 120));
+                if (++$shown >= 5) { break; }
+            }
+        }
 
         return $rows;
     }
