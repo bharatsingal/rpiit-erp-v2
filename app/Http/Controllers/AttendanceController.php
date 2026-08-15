@@ -51,7 +51,22 @@ class AttendanceController extends Controller
 
         $offering->load(['subject', 'batch.course', 'section']);
 
-        return view('attendance.mark', compact('offering', 'students', 'date', 'session', 'existing'));
+        // If nothing is enrolled in this term, say where the students actually
+        // are rather than leaving a blank screen.
+        $elsewhere = collect();
+        if ($students->isEmpty() && $offering->batch) {
+            $year = AcademicYear::current();
+            $elsewhere = \App\Models\Enrollment::query()
+                ->where('batch_id', $offering->batch_id)
+                ->when($year, fn ($q) => $q->where('academic_year_id', $year->id))
+                ->selectRaw('term_id, COUNT(*) as total')
+                ->groupBy('term_id')
+                ->with('term')
+                ->get()
+                ->filter(fn ($r) => $r->term);
+        }
+
+        return view('attendance.mark', compact('offering', 'students', 'date', 'session', 'existing', 'elsewhere'));
     }
 
     public function store(SubjectOffering $offering, Request $request)

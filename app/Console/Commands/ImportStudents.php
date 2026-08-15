@@ -390,7 +390,11 @@ class ImportStudents extends Command
 
         $key = $course->id.':'.$span;
         if (array_key_exists($key, $this->spanCache)) {
-            return $this->spanCache[$key];
+            $hit = $this->spanCache[$key];
+            if ($hit->id !== $course->id) {
+                $this->reroutedTo[$hit->name] = ($this->reroutedTo[$hit->name] ?? 0) + 1;
+            }
+            return $hit;
         }
 
         // Look at the lateral variants of this course, and at its parent if

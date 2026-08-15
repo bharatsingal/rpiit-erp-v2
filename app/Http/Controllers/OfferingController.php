@@ -36,10 +36,33 @@ class OfferingController extends Controller
         ]);
     }
 
-    /** Terms depend on the batch's course, so the form fetches them on demand. */
+    /**
+     * Terms depend on the batch's course, so the form fetches them on demand —
+     * with the number of students actually enrolled in each for the current
+     * year. A batch that started in 2025 is in Year 2 now, not Year 1, and
+     * making people work that out in their head guarantees mistakes.
+     */
     public function termsFor(Batch $batch)
     {
-        return $batch->course->terms()->orderBy('number')->get(['id', 'name', 'number']);
+        $year = AcademicYear::current();
+
+        return $batch->course->terms()
+            ->orderBy('number')
+            ->get(['id', 'name', 'number'])
+            ->map(function ($term) use ($batch, $year) {
+                $count = $year
+                    ? \App\Models\Enrollment::where('batch_id', $batch->id)
+                        ->where('term_id', $term->id)
+                        ->where('academic_year_id', $year->id)
+                        ->count()
+                    : 0;
+
+                return [
+                    'id'    => $term->id,
+                    'name'  => $count > 0 ? "{$term->name} — {$count} students" : "{$term->name} — none enrolled",
+                    'count' => $count,
+                ];
+            });
     }
 
     public function store(Request $request)

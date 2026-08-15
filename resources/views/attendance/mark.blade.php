@@ -36,8 +36,29 @@
     </div>
 
     @if($students->isEmpty())
-      <div class="bg-white rounded-xl border border-ink-100 p-6 text-sm text-ink-600">
-        No students are enrolled in this batch and term for the current academic year.
+      <div class="bg-white rounded-xl border border-ink-100 p-6 text-sm">
+        <p class="font-medium text-ink-900 mb-1">No students in this term.</p>
+        @if($elsewhere->isNotEmpty())
+          <p class="text-ink-600 mb-3">
+            {{ $offering->batch?->name }} students are enrolled in:
+          </p>
+          <ul class="space-y-1">
+            @foreach($elsewhere as $row)
+              <li class="text-ink-900">
+                <span class="font-medium">{{ $row->term->name }}</span>
+                <span class="text-ink-600">— {{ $row->total }} students</span>
+              </li>
+            @endforeach
+          </ul>
+          <p class="text-ink-600 mt-3">
+            Add the class against that term on the
+            <a href="{{ route('offerings.index') }}" class="underline underline-offset-2">Classes</a> page.
+          </p>
+        @else
+          <p class="text-ink-600">
+            Nobody from {{ $offering->batch?->name }} is enrolled in the current academic year.
+          </p>
+        @endif
       </div>
     @else
       <ul class="bg-white rounded-xl border border-ink-100 divide-y divide-ink-100 overflow-hidden">
