@@ -112,6 +112,23 @@ class ImportStudents extends Command
                 ]);
                 $student->save();
 
+                // Fee snapshot from the Tally export. Stored per import date so
+                // a history builds up rather than being overwritten each week.
+                $due     = $this->money($row['Due'] ?? 0);
+                $receipt = $this->money($row['Receipt'] ?? 0);
+                if ($due || $receipt) {
+                    \App\Models\StudentFeeBalance::updateOrCreate(
+                        ['student_id' => $student->id, 'as_of' => now()->toDateString()],
+                        [
+                            'due'         => $due,
+                            'receipt'     => $receipt,
+                            'outstanding' => max($due - $receipt, 0),
+                            'advance'     => max($receipt - $due, 0),
+                            'source'      => 'tally_export',
+                        ]
+                    );
+                }
+
                 if ($batch) {
                     $term = $this->currentTermFor($course, $batch, $year);
                     if ($term) {
@@ -224,6 +241,17 @@ class ImportStudents extends Command
         $v = strtoupper(preg_replace('/\s+/', '', trim($raw)));
         // The Tally export writes some numbers as floats: "2025001.0".
         return preg_replace('/\.0$/', '', $v);
+    }
+
+    /** Tally writes blanks, dashes and floats. All of them mean a number. */
+    private function money($raw): int
+    {
+        $s = trim((string) $raw);
+        if ($s === '' || $s === '-') {
+            return 0;
+        }
+        $s = preg_replace('/[^0-9.\-]/', '', $s);
+        return $s === '' ? 0 : (int) round((float) $s);
     }
 
     private function key(string $s): string
