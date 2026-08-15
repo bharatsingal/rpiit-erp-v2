@@ -9,11 +9,17 @@ class Batch extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['course_id', 'branch_id', 'admission_year', 'name', 'is_active'];
+    protected $fillable = [
+        'course_id', 'branch_id', 'start_year', 'end_year', 'name', 'is_active',
+    ];
 
     protected function casts(): array
     {
-        return ['is_active' => 'boolean', 'admission_year' => 'integer'];
+        return [
+            'is_active'  => 'boolean',
+            'start_year' => 'integer',
+            'end_year'   => 'integer',
+        ];
     }
 
     public function course()
@@ -34,5 +40,16 @@ class Batch extends Model
     public function enrollments()
     {
         return $this->hasMany(Enrollment::class);
+    }
+
+    public function subjectOfferings()
+    {
+        return $this->hasMany(SubjectOffering::class);
+    }
+
+    /** Years the course runs for, from the batch itself. */
+    public function spanYears(): int
+    {
+        return max(0, $this->end_year - $this->start_year);
     }
 }
