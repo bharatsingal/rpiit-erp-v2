@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\BatchController;
+use App\Http\Controllers\CourseController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\OfferingController;
@@ -19,6 +21,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::get('/courses', [CourseController::class, 'index'])->name('courses.index');
+    Route::get('/courses/{course}', [CourseController::class, 'show'])->name('courses.show');
+    Route::get('/batches/{batch}', [BatchController::class, 'show'])->name('batches.show');
 
     Route::get('/students', [StudentController::class, 'index'])->name('students.index');
 

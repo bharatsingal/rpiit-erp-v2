@@ -25,7 +25,8 @@ class ImportStudents extends Command
 {
     protected $signature = 'rpiit:import-students
                             {file : Path to the CSV export}
-                            {--dry-run : Report what would happen, change nothing}';
+                            {--dry-run : Report what would happen, change nothing}
+                            {--fresh : Clear students, enrolments and fee balances first}';
 
     protected $description = 'Import students, batches and enrolments from the RPIIT master CSV';
 
@@ -54,6 +55,14 @@ class ImportStudents extends Command
             return self::FAILURE;
         }
 
+        if ($this->option('fresh') && ! $dry) {
+            if (! $this->confirm('This deletes every student, enrolment, attendance record and fee balance. Continue?')) {
+                return self::FAILURE;
+            }
+            $this->clearStudentData();
+            $this->warn('Student data cleared.');
+        }
+
         $rows = $this->readCsv($path);
         if (! $rows) {
             $this->error('No data rows found — is the header row present?');
@@ -67,6 +76,12 @@ class ImportStudents extends Command
         // the same person (one often carrying the fee figures, the other zeros)
         // are merged. Two different people on one number are never merged —
         // that is an institutional problem, not a typo.
+        // RPIIT issues a temporary application number (20xxxxx) at enquiry and a
+        // course-prefixed admission number once the student is admitted. Both
+        // rows survive in the export. Absorb the application row into the
+        // admitted one — but only where it is unambiguous.
+        [$rows, $absorbed, $unmatched] = $this->absorbApplicationRows($rows);
+
         [$rows, $merged, $collisions] = $this->resolveDuplicates($rows);
 
         $stats = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'merged' => $merged];
@@ -106,7 +121,9 @@ class ImportStudents extends Command
                 $existed = $student->exists;
 
                 $student->fill([
-                    'first_name'  => $name,
+                    // Some source rows glue the admission number onto the name
+                    // ("Bph2501Abhishek"). Store the name a human would read.
+                    'first_name'  => $this->displayName($name, $admission),
                     'roll_no'     => trim($row['SR no.'] ?? '') ?: null,
                     'phone'       => $this->cleanPhone($row['Mobile'] ?? ''),
                     'status'      => $this->statusFor($batch),
@@ -154,6 +171,17 @@ class ImportStudents extends Command
         $this->table(['Created', 'Updated', 'Merged duplicates', 'Skipped'],
             [[$stats['created'], $stats['updated'], $stats['merged'], $stats['skipped']]]);
 
+        if ($absorbed) {
+            $this->newLine();
+            $this->info("{$absorbed} application-series rows absorbed into their admitted record.");
+        }
+        if ($unmatched) {
+            $this->newLine();
+            $this->warn("{$unmatched} application-series rows had no matching admitted record.");
+            $this->line('  Imported as-is. They are either applicants who never enrolled,');
+            $this->line('  or admitted students whose name is spelt differently on the two rows.');
+        }
+
         if ($this->reroutedTo) {
             $this->newLine();
             $this->info('Students filed under a lateral-entry course, from their batch length:');
@@ -179,6 +207,128 @@ class ImportStudents extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Wipe everything derived from a student import, so a corrected export can
+     * be loaded cleanly. Leaves users, staff, courses, terms and fine codes
+     * alone — those are not produced by this command.
+     */
+    private function clearStudentData(): void
+    {
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
+
+        foreach ([
+            'attendance_records',
+            'attendance_sessions',
+            'subject_offerings',
+            'enrollments',
+            'student_fee_balances',
+            'students',
+            'sections',
+            'batches',
+        ] as $table) {
+            DB::table($table)->truncate();
+        }
+
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
+    }
+
+    /**
+     * Collapse the application-series row into the admitted row for the same
+     * person.
+     *
+     * The rule is deliberately narrow, because first names repeat heavily
+     * within a batch — three different students called Priyanka in one ANM
+     * batch is normal. A row is only absorbed when ALL of these hold:
+     *
+     *   - it carries an application-series number (20xxxxx)
+     *   - it has no money against it at all
+     *   - exactly ONE course-prefixed row shares its batch and name
+     *
+     * Anything else is left alone and imported as its own student.
+     *
+     * @return array{0: array, 1: int, 2: int}
+     */
+    private function absorbApplicationRows(array $rows): array
+    {
+        $groups = [];
+        foreach ($rows as $i => $row) {
+            $adm = $this->normaliseAdmissionNo($row['Admission no.'] ?? '');
+            $name = $this->comparableName($row['Student name'] ?? '', $adm);
+            if ($name === '') {
+                continue;
+            }
+            $key = strtolower(trim($row['Branch / batch'] ?? '')).'|'.$name;
+            $groups[$key][] = $i;
+        }
+
+        $drop = [];
+        $unmatched = 0;
+
+        foreach ($groups as $indexes) {
+            $applications = [];
+            $admitted = [];
+
+            foreach ($indexes as $i) {
+                $adm = $this->normaliseAdmissionNo($rows[$i]['Admission no.'] ?? '');
+                if ($this->isApplicationNumber($adm)) {
+                    $applications[] = $i;
+                } else {
+                    $admitted[] = $i;
+                }
+            }
+
+            if (! $applications) {
+                continue;
+            }
+
+            if (count($admitted) !== 1) {
+                $unmatched += count($applications);
+                continue;
+            }
+
+            // Money on an application row means it is not a stale placeholder.
+            $allEmpty = true;
+            foreach ($applications as $i) {
+                if ($this->money($rows[$i]['Due'] ?? 0) || $this->money($rows[$i]['Receipt'] ?? 0)) {
+                    $allEmpty = false;
+                    break;
+                }
+            }
+
+            if (! $allEmpty) {
+                $unmatched += count($applications);
+                continue;
+            }
+
+            foreach ($applications as $i) {
+                $drop[$i] = true;
+            }
+        }
+
+        $kept = [];
+        foreach ($rows as $i => $row) {
+            if (! isset($drop[$i])) {
+                $kept[] = $row;
+            }
+        }
+
+        return [$kept, count($drop), $unmatched];
+    }
+
+    /** "Bph2501Abhishek" -> "Abhishek". */
+    private function displayName(string $name, string $admission): string
+    {
+        $n = preg_replace('/^'.preg_quote($admission, '/').'\s*/i', '', trim($name));
+
+        return trim($n) !== '' ? trim($n) : trim($name);
+    }
+
+    /** Temporary number issued at enquiry, before an admission number exists. */
+    private function isApplicationNumber(string $admission): bool
+    {
+        return (bool) preg_match('/^20\d{5,}$/', $admission);
     }
 
     /**

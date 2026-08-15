@@ -37,10 +37,10 @@
   <div class="mx-auto max-w-6xl px-4 flex gap-1 overflow-x-auto text-sm">
     @php $nav = [
       ['dashboard','Dashboard'],
+      ['courses.index','Courses'],
       ['attendance.index','Attendance'],
       ['students.index','Students'],
       ['subjects.index','Subjects'],
-      ['offerings.index','Classes'],
     ]; @endphp
     @foreach($nav as [$route,$label])
       @php $on = request()->routeIs(str_replace('.index','.*',$route)) || request()->routeIs($route); @endphp

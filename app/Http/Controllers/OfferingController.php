@@ -96,6 +96,6 @@ class OfferingController extends Controller
             ['faculty_id' => $data['faculty_id'] ?? null]
         );
 
-        return back()->with('status', 'Class added — it now appears on the attendance screen.');
+        return back()->with('status', 'Subject added — it now appears on the attendance screen.');
     }
 }
