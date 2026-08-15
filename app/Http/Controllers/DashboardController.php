@@ -25,7 +25,9 @@ class DashboardController extends Controller
             'duesCount'     => $asOf ? StudentFeeBalance::where('as_of', $asOf)->where('outstanding', '>', 0)->count() : 0,
             'duesTotal'     => $asOf ? (int) StudentFeeBalance::where('as_of', $asOf)->sum('outstanding') : 0,
             'feesAsOf'      => $asOf,
-            'byCourse'      => Student::where('status', 'active')
+            // Both students and enrollments have a `status` column, so every
+            // column in this join has to be table-qualified.
+            'byCourse'      => Student::where('students.status', 'active')
                 ->join('enrollments', 'enrollments.student_id', '=', 'students.id')
                 ->join('batches', 'batches.id', '=', 'enrollments.batch_id')
                 ->join('courses', 'courses.id', '=', 'batches.course_id')

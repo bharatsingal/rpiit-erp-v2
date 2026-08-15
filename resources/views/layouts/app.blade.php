@@ -39,6 +39,8 @@
       ['dashboard','Dashboard'],
       ['attendance.index','Attendance'],
       ['students.index','Students'],
+      ['subjects.index','Subjects'],
+      ['offerings.index','Classes'],
     ]; @endphp
     @foreach($nav as [$route,$label])
       @php $on = request()->routeIs(str_replace('.index','.*',$route)) || request()->routeIs($route); @endphp

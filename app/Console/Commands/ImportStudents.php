@@ -57,9 +57,13 @@ class ImportStudents extends Command
 
         $courses = Course::all()->keyBy(fn ($c) => $this->key($c->name));
 
-        $seen = [];
-        $stats = ['created' => 0, 'updated' => 0, 'skipped' => 0];
-        $collisions = [];
+        // Resolve duplicate admission numbers BEFORE importing. Two rows for
+        // the same person (one often carrying the fee figures, the other zeros)
+        // are merged. Two different people on one number are never merged —
+        // that is an institutional problem, not a typo.
+        [$rows, $merged, $collisions] = $this->resolveDuplicates($rows);
+
+        $stats = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'merged' => $merged];
         $unknownCourses = [];
 
         $bar = $this->output->createProgressBar(count($rows));
@@ -76,15 +80,6 @@ class ImportStudents extends Command
                 $stats['skipped']++;
                 continue;
             }
-
-            // Two source rows normalising to the same admission number is a
-            // data problem for a human, not something to guess at.
-            if (isset($seen[$admission])) {
-                $collisions[] = [$admission, $seen[$admission], $name, 'row '.($i + 2)];
-                $stats['skipped']++;
-                continue;
-            }
-            $seen[$admission] = $name;
 
             $course = $courses[$this->key($courseRaw)] ?? null;
             if (! $course) {
@@ -150,8 +145,8 @@ class ImportStudents extends Command
         $bar->finish();
         $this->newLine(2);
 
-        $this->table(['Created', 'Updated', 'Skipped'],
-            [[$stats['created'], $stats['updated'], $stats['skipped']]]);
+        $this->table(['Created', 'Updated', 'Merged duplicates', 'Skipped'],
+            [[$stats['created'], $stats['updated'], $stats['merged'], $stats['skipped']]]);
 
         if ($unknownCourses) {
             $this->newLine();
@@ -163,15 +158,87 @@ class ImportStudents extends Command
 
         if ($collisions) {
             $this->newLine();
-            $this->error(count($collisions).' duplicate admission numbers — NOT imported, resolve these:');
-            $this->table(['Admission no.', 'First seen as', 'Also seen as', 'Where'],
-                array_slice($collisions, 0, 40));
-            if (count($collisions) > 40) {
-                $this->line('  ... and '.(count($collisions) - 40).' more');
-            }
+            $this->error(count($collisions).' admission numbers carry DIFFERENT students — not imported:');
+            $this->table(['Admission no.', 'One student', 'The other', 'Note'], $collisions);
+            $this->line('  These need the office to decide. An admission number identifies');
+            $this->line('  one person; reusing it across intakes breaks fees, marks and attendance.');
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Collapse duplicate admission numbers.
+     *
+     * Same person twice  -> keep one row, preferring whichever carries fee
+     *                       figures (the other is usually an empty placeholder).
+     * Different people    -> keep neither, and report. Reusing an admission
+     *                       number across intakes is a real institutional
+     *                       problem and merging would corrupt both records.
+     *
+     * @return array{0: array, 1: int, 2: array}
+     */
+    private function resolveDuplicates(array $rows): array
+    {
+        $byAdmission = [];
+        foreach ($rows as $i => $row) {
+            $adm = $this->normaliseAdmissionNo($row['Admission no.'] ?? '');
+            if ($adm === '') {
+                continue;
+            }
+            $byAdmission[$adm][] = ['row' => $row, 'line' => $i + 2];
+        }
+
+        $resolved = [];
+        $merged = 0;
+        $collisions = [];
+
+        foreach ($byAdmission as $adm => $entries) {
+            if (count($entries) === 1) {
+                $resolved[] = $entries[0]['row'];
+                continue;
+            }
+
+            $names = array_map(
+                fn ($e) => $this->comparableName($e['row']['Student name'] ?? '', $adm),
+                $entries
+            );
+
+            if (count(array_unique($names)) === 1) {
+                // Same person. Keep the row with the most fee information.
+                usort($entries, fn ($a, $b) =>
+                    ($this->money($b['row']['Due'] ?? 0) + $this->money($b['row']['Receipt'] ?? 0))
+                    <=> ($this->money($a['row']['Due'] ?? 0) + $this->money($a['row']['Receipt'] ?? 0))
+                );
+                $resolved[] = $entries[0]['row'];
+                $merged += count($entries) - 1;
+                continue;
+            }
+
+            $collisions[] = [
+                $adm,
+                trim($entries[0]['row']['Student name'] ?? '').' (row '.$entries[0]['line'].')',
+                trim($entries[1]['row']['Student name'] ?? '').' (row '.$entries[1]['line'].')',
+                ($entries[0]['row']['Branch / batch'] ?? '') === ($entries[1]['row']['Branch / batch'] ?? '')
+                    ? 'same batch' : 'number reused across batches',
+            ];
+        }
+
+        return [$resolved, $merged, $collisions];
+    }
+
+    /**
+     * A name we can compare. Some rows glue the admission number onto the
+     * front ("Bb2515Ashish"), and category tags leak into the name field.
+     */
+    private function comparableName(string $name, string $admission): string
+    {
+        $n = trim($name);
+        $n = preg_replace('/^'.preg_quote($admission, '/').'/i', '', $n);
+        $n = strtolower(preg_replace('/\s+/', ' ', $n));
+        $n = preg_replace('/\b(sc|st|gen|obc|bc-?a|bc-?b)\b/', '', $n);
+
+        return trim(preg_replace('/[^a-z ]/', '', $n));
     }
 
     /**
