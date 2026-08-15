@@ -29,6 +29,12 @@ class ImportStudents extends Command
 
     protected $description = 'Import students, batches and enrolments from the RPIIT master CSV';
 
+    /** @var array<string, \App\Models\Course> */
+    private array $spanCache = [];
+
+    /** @var array<string, int> */
+    private array $reroutedTo = [];
+
     public function handle(): int
     {
         $path = $this->argument('file');
@@ -147,6 +153,14 @@ class ImportStudents extends Command
 
         $this->table(['Created', 'Updated', 'Merged duplicates', 'Skipped'],
             [[$stats['created'], $stats['updated'], $stats['merged'], $stats['skipped']]]);
+
+        if ($this->reroutedTo) {
+            $this->newLine();
+            $this->info('Students filed under a lateral-entry course, from their batch length:');
+            foreach ($this->reroutedTo as $name => $n) {
+                $this->line(sprintf('  %-24s %d', $name, $n));
+            }
+        }
 
         if ($unknownCourses) {
             $this->newLine();
@@ -336,7 +350,15 @@ class ImportStudents extends Command
         return $d;
     }
 
-    /** "B.PHARMACY 2025-29" -> the batch row, created if needed. */
+    /**
+     * "B.PHARMACY 2025-29" -> the batch row, created if needed.
+     *
+     * The year span is trusted over the course label. RPIIT's export records
+     * lateral-entry students under the parent course name, but their batch is
+     * a year shorter because they join in year 2 — "B.PHARMACY 2025-28" is
+     * really B.PHARMACY LEET. Where the span matches a lateral variant (or the
+     * parent, for a mislabelled LEET row) the student is filed there instead.
+     */
     private function resolveBatch(Course $course, string $batchRaw): ?Batch
     {
         if (! preg_match('/(\d{4})\s*-\s*(\d{2,4})\s*$/', $batchRaw, $m)) {
@@ -344,11 +366,46 @@ class ImportStudents extends Command
         }
         $start = (int) $m[1];
         $end   = strlen($m[2]) === 2 ? (int) (substr($m[1], 0, 2).$m[2]) : (int) $m[2];
+        $span  = $end - $start;
+
+        $course = $this->courseForSpan($course, $span);
 
         return Batch::firstOrCreate(
-            ['course_id' => $course->id, 'branch_id' => null, 'start_year' => $start],
-            ['end_year' => $end, 'name' => trim($batchRaw), 'is_active' => true]
+            [
+                'course_id'  => $course->id,
+                'branch_id'  => null,
+                'start_year' => $start,
+                'end_year'   => $end,
+            ],
+            ['name' => trim($batchRaw), 'is_active' => true]
         );
+    }
+
+    /** Pick the course variant whose duration matches the batch's year span. */
+    private function courseForSpan(Course $course, int $span): Course
+    {
+        if ($span <= 0 || $span === $course->duration_years) {
+            return $course;
+        }
+
+        $key = $course->id.':'.$span;
+        if (array_key_exists($key, $this->spanCache)) {
+            return $this->spanCache[$key];
+        }
+
+        // Look at the lateral variants of this course, and at its parent if
+        // this course is itself the lateral one.
+        $candidates = Course::where('parent_course_id', $course->id)
+            ->orWhere('id', $course->parent_course_id)
+            ->get();
+
+        $match = $candidates->firstWhere('duration_years', $span);
+
+        if ($match) {
+            $this->reroutedTo[$match->name] = ($this->reroutedTo[$match->name] ?? 0) + 1;
+        }
+
+        return $this->spanCache[$key] = ($match ?? $course);
     }
 
     /** Passed out if the batch ended before the current academic year began. */
