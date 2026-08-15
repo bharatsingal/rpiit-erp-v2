@@ -23,7 +23,14 @@
     </a>
     @auth
     <div class="flex items-center gap-4 text-sm">
-      <span class="hidden sm:block text-white/70">{{ auth()->user()->name }}</span>
+      <span class="hidden sm:block text-white/70">
+        {{ auth()->user()->staff?->name ?? auth()->user()->name }}
+        @if(!auth()->user()->seesEverything() && auth()->user()->department())
+          <span class="ml-1 text-[10px] uppercase tracking-wide bg-white/15 rounded px-1.5 py-0.5">
+            {{ auth()->user()->department()->name }}
+          </span>
+        @endif
+      </span>
       <form method="POST" action="{{ route('logout') }}">@csrf
         <button class="text-white/80 hover:text-white">Sign out</button>
       </form>
@@ -40,6 +47,7 @@
       ['courses.index','Courses'],
       ['attendance.index','Attendance'],
       ['students.index','Students'],
+      ['staff.index','Staff'],
       ['subjects.index','Subjects'],
     ]; @endphp
     @foreach($nav as [$route,$label])

@@ -29,7 +29,11 @@ class CourseController extends Controller
             ->groupBy('course_id')
             ->pluck('total', 'course_id');
 
-        $courses = Course::orderBy('name')->get()
+        // A department user sees only their own courses.
+        $visible = auth()->user()->visibleCourseIds();
+
+        $courses = Course::when($visible !== null, fn ($q) => $q->whereIn('id', $visible))
+            ->orderBy('name')->get()
             ->each(function ($c) use ($counts, $batchCounts) {
                 $c->student_total = (int) ($counts[$c->id] ?? 0);
                 $c->batch_total   = (int) ($batchCounts[$c->id] ?? 0);
@@ -41,6 +45,9 @@ class CourseController extends Controller
 
     public function show(Course $course)
     {
+        $visible = auth()->user()->visibleCourseIds();
+        abort_if($visible !== null && ! in_array($course->id, $visible), 403);
+
         $year = AcademicYear::current();
 
         $counts = DB::table('enrollments')

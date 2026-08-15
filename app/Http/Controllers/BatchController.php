@@ -13,8 +13,12 @@ class BatchController extends Controller
 {
     public function show(Batch $batch)
     {
-        $year = AcademicYear::current();
         $batch->load('course');
+
+        $visible = auth()->user()->visibleCourseIds();
+        abort_if($visible !== null && ! in_array($batch->course_id, $visible), 403);
+
+        $year = AcademicYear::current();
 
         // Which term this batch sits in now, and how many are in each.
         $byTerm = Enrollment::query()

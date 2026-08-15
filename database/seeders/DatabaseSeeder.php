@@ -13,6 +13,7 @@ class DatabaseSeeder extends Seeder
             CourseSeeder::class,
             TermSeeder::class,
             FineCodeSeeder::class,
+            DepartmentCourseSeeder::class,
         ]);
     }
 }

@@ -9,7 +9,11 @@ class SubjectController extends Controller
 {
     public function index(Request $request)
     {
+        $visible = auth()->user()->visibleCourseIds();
+
         $subjects = Subject::query()
+            ->when($visible !== null, fn ($q) => $q->whereHas('offerings.batch',
+                fn ($b) => $b->whereIn('course_id', $visible)))
             ->when($request->filled('q'), function ($q) use ($request) {
                 $t = '%'.$request->string('q').'%';
                 $q->where(fn ($w) => $w->where('name', 'like', $t)->orWhere('code', 'like', $t));

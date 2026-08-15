@@ -5,12 +5,15 @@ use App\Http\Controllers\BatchController;
 use App\Http\Controllers\CourseController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\HomeController;
 use App\Http\Controllers\OfferingController;
+use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/dashboard');
+// Public landing page. Signed-in users get a link through to the ERP.
+Route::get('/', [HomeController::class, 'index'])->name('home');
 
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'show'])->name('login');
@@ -27,6 +30,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/batches/{batch}', [BatchController::class, 'show'])->name('batches.show');
 
     Route::get('/students', [StudentController::class, 'index'])->name('students.index');
+    Route::get('/staff', [StaffController::class, 'index'])->name('staff.index');
 
     Route::get('/subjects', [SubjectController::class, 'index'])->name('subjects.index');
     Route::post('/subjects', [SubjectController::class, 'store'])->name('subjects.store');

@@ -9,8 +9,12 @@ class StudentController extends Controller
 {
     public function index(Request $request)
     {
+        $visible = auth()->user()->visibleCourseIds();
+
         $students = Student::query()
             ->with(['currentEnrollment.batch'])
+            ->when($visible !== null, fn ($q) => $q->whereHas('enrollments.batch',
+                fn ($b) => $b->whereIn('course_id', $visible)))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('q'), function ($q) use ($request) {
                 $term = '%'.$request->string('q').'%';

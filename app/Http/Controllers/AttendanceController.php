@@ -25,8 +25,12 @@ class AttendanceController extends Controller
     {
         $year = AcademicYear::current();
 
+        $visible = auth()->user()->visibleCourseIds();
+
         $offerings = SubjectOffering::with(['subject', 'batch.course', 'section', 'faculty'])
             ->when($year, fn ($q) => $q->where('academic_year_id', $year->id))
+            ->when($visible !== null, fn ($q) => $q->whereHas('batch',
+                fn ($b) => $b->whereIn('course_id', $visible)))
             ->get()
             ->sortBy(fn ($o) => $o->batch?->name.' '.$o->subject?->name);
 
@@ -35,6 +39,8 @@ class AttendanceController extends Controller
 
     public function create(SubjectOffering $offering, Request $request)
     {
+        $this->authoriseOffering($offering);
+
         $date = $request->date('date')?->toDateString() ?? now()->toDateString();
 
         $students = $offering->students()->get();
@@ -71,6 +77,8 @@ class AttendanceController extends Controller
 
     public function store(SubjectOffering $offering, Request $request)
     {
+        $this->authoriseOffering($offering);
+
         $data = $request->validate([
             'date'            => ['required', 'date'],
             'period'          => ['nullable', 'integer', 'min:1', 'max:12'],
@@ -121,5 +129,15 @@ class AttendanceController extends Controller
 
         return redirect()->route('attendance.index')
             ->with('status', "Saved — {$present} present, ".count($absent)." absent.");
+    }
+
+    /** Refuse a class that belongs to another department. */
+    private function authoriseOffering(SubjectOffering $offering): void
+    {
+        $visible = auth()->user()->visibleCourseIds();
+        if ($visible === null) {
+            return;
+        }
+        abort_if(! in_array($offering->batch?->course_id, $visible), 403);
     }
 }
