@@ -2,48 +2,60 @@
 @section('title','Dashboard')
 @section('content')
 
-<h1 class="text-lg font-semibold mb-1">Dashboard</h1>
-<p class="text-sm text-ink-600 mb-5">{{ $year?->name ? 'Academic year '.$year->name : 'No current academic year set' }}</p>
+<div class="flex items-baseline justify-between mb-5">
+  <div>
+    <h1 class="text-lg font-semibold">Dashboard</h1>
+    <p class="text-sm text-ink-600">{{ $year?->name ? 'Academic year '.$year->name : 'No current academic year set' }}</p>
+  </div>
+</div>
 
+<!-- headline figures -->
 <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 mb-6">
   @php
     $tiles = [
-      ['Students', number_format($students), $passedOut ? number_format($passedOut).' passed out' : null],
-      ['Staff', number_format($staffCount), number_format($supportCount).' support staff'],
-      ['Courses', number_format($courses), null],
+      ['Students', number_format($students), $passedOut ? number_format($passedOut).' passed out' : null, 'emerald'],
+      ['Staff', number_format($staffCount), number_format($supportCount).' support staff', 'sky'],
+      ['Courses', number_format($courses), null, 'violet'],
       ['Students with dues', number_format($duesCount),
-        $feesAsOf ? '₹'.number_format($duesTotal).' outstanding' : 'No fee data imported'],
+        $feesAsOf ? '₹'.number_format($duesTotal).' outstanding' : 'No fee data imported', 'rose'],
     ];
   @endphp
-  @foreach($tiles as [$label, $value, $sub])
-    <div class="bg-white rounded-xl border border-ink-100 p-4">
-      <div class="text-xs uppercase tracking-wide text-ink-600">{{ $label }}</div>
-      <div class="text-2xl font-semibold mt-1 tabular-nums">{{ $value }}</div>
-      @if($sub)<div class="text-xs text-ink-600 mt-0.5">{{ $sub }}</div>@endif
+  @foreach($tiles as [$label, $value, $sub, $tone])
+    <div class="bg-white rounded-xl border border-ink-100 p-4 flex items-start gap-3">
+      @php $bar = ['emerald'=>'bg-emerald-500','sky'=>'bg-sky-500','violet'=>'bg-violet-500','rose'=>'bg-rose-500'][$tone]; @endphp
+      <span class="w-1 self-stretch rounded-full {{ $bar }}"></span>
+      <span class="min-w-0">
+        <span class="block text-[11px] uppercase tracking-wide text-ink-600">{{ $label }}</span>
+        <span class="block text-2xl font-semibold mt-0.5 tabular-nums">{{ $value }}</span>
+        @if($sub)<span class="block text-xs text-ink-600 mt-0.5">{{ $sub }}</span>@endif
+      </span>
     </div>
   @endforeach
 </div>
 
+<!-- course cards, the layout the old ERP used -->
 @if($byCourse->isNotEmpty())
-<div class="bg-white rounded-xl border border-ink-100 overflow-hidden">
-  <div class="px-4 py-3 border-b border-ink-100 font-medium text-sm">Active students by course</div>
-  @php $max = $byCourse->max('total') ?: 1; @endphp
-  <ul class="divide-y divide-ink-100">
+  <h2 class="text-sm font-semibold mb-3">Active students by course</h2>
+  <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
     @foreach($byCourse as $row)
-      <li class="px-4 py-2.5 flex items-center gap-3 text-sm">
-        <span class="w-40 shrink-0 truncate">{{ $row->name }}</span>
-        <span class="flex-1 h-2 rounded bg-ink-50 overflow-hidden">
-          <span class="block h-full bg-ink-600" style="width: {{ round($row->total / $max * 100) }}%"></span>
+      <div class="bg-white rounded-xl border border-ink-100 p-4 flex items-center gap-3">
+        <span class="min-w-0 flex-1">
+          <span class="block text-xs text-ink-600 truncate uppercase tracking-wide">{{ $row->name }}</span>
+          <span class="block text-2xl font-semibold mt-1 tabular-nums">{{ number_format($row->total) }}</span>
         </span>
-        <span class="w-12 text-right tabular-nums font-medium">{{ $row->total }}</span>
-      </li>
+        <span class="w-11 h-11 shrink-0 rounded-full bg-ink-50 grid place-items-center">
+          <svg class="w-5 h-5 text-ink-600" fill="none" stroke="currentColor" stroke-width="1.6" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round"
+                  d="M12 3L2 8l10 5 10-5-10-5zM4 12v5c0 1 4 3 8 3s8-2 8-3v-5"/>
+          </svg>
+        </span>
+      </div>
     @endforeach
-  </ul>
-</div>
+  </div>
 @else
-<div class="bg-white rounded-xl border border-ink-100 p-6 text-sm text-ink-600">
-  No students imported yet. Run <code class="bg-ink-50 px-1.5 py-0.5 rounded">php artisan rpiit:import-students</code>.
-</div>
+  <div class="bg-white rounded-xl border border-ink-100 p-6 text-sm text-ink-600">
+    No students imported yet.
+  </div>
 @endif
 
 @endsection
