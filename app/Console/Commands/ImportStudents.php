@@ -70,7 +70,9 @@ class ImportStudents extends Command
         }
         $this->info(count($rows).' rows read.');
 
-        $courses = Course::all()->keyBy(fn ($c) => $this->key($c->name));
+        $allCourses = Course::all();
+        $courses = $allCourses->keyBy(fn ($c) => $this->key($c->name));
+        $byCode  = $allCourses->keyBy('code');
 
         // Resolve duplicate admission numbers BEFORE importing. Two rows for
         // the same person (one often carrying the fee figures, the other zeros)
@@ -102,7 +104,7 @@ class ImportStudents extends Command
                 continue;
             }
 
-            $course = $courses[$this->key($courseRaw)] ?? null;
+            $course = $this->resolveCourse($courseRaw, $batchRaw, $courses, $byCode);
             if (! $course) {
                 $unknownCourses[$courseRaw] = ($unknownCourses[$courseRaw] ?? 0) + 1;
                 $stats['skipped']++;
@@ -529,6 +531,29 @@ class ImportStudents extends Command
             ],
             ['name' => trim($batchRaw), 'is_active' => true]
         );
+    }
+
+    /**
+     * Find the course for a row.
+     *
+     * D.Pharmacy is run by two institutes on the same campus — RPETGI and
+     * RPIP — and the export distinguishes them only by an A or B in the batch
+     * name ("D.PHARMACY A 2025-27"). Confirmed with Bharat 2026-08-15:
+     * A is RPETGI, B is RPIP. Everything else matches on course name.
+     */
+    private function resolveCourse(string $courseRaw, string $batchRaw, $byName, $byCode): ?Course
+    {
+        $key = $this->key($courseRaw);
+
+        if ($key === 'DPHARMACY') {
+            // Look for a standalone A or B between the course name and the years.
+            if (preg_match('/\bB\b/i', preg_replace('/\d{4}\s*-\s*\d{2,4}/', '', $batchRaw))) {
+                return $byCode['DPHARM-RPIP'] ?? null;
+            }
+            return $byCode['DPHARM-RPETGI'] ?? $byCode['DPHARM'] ?? null;
+        }
+
+        return $byName[$key] ?? null;
     }
 
     /** Pick the course variant whose duration matches the batch's year span. */

@@ -27,7 +27,11 @@
 
   <div class="lg:col-span-3">
     <div class="bg-white rounded-xl border border-ink-100 overflow-hidden mb-4">
-      <div class="px-4 py-3 border-b border-ink-100 text-sm font-medium">Subjects</div>
+      <div class="px-4 py-3 border-b border-ink-100 text-sm font-medium flex items-center justify-between">
+        <span>Subjects</span>
+        <a href="{{ route('timetable.show', $batch) }}"
+           class="text-xs font-normal rounded-lg bg-ink-50 px-3 py-1.5 hover:bg-ink-100">Timetable</a>
+      </div>
       <ul class="divide-y divide-ink-100">
         @forelse($offerings as $o)
           <li class="px-4 py-3 flex items-center gap-3 text-sm">

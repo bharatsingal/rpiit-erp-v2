@@ -16,6 +16,11 @@ class Course extends Model
         return ['is_active' => 'boolean', 'total_terms' => 'integer'];
     }
 
+    public function institute()
+    {
+        return $this->belongsTo(Institute::class);
+    }
+
     public function terms()
     {
         return $this->hasMany(Term::class)->orderBy('number');

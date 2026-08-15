@@ -10,6 +10,7 @@ use App\Http\Controllers\OfferingController;
 use App\Http\Controllers\StaffController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\SubjectController;
+use App\Http\Controllers\TimetableController;
 use Illuminate\Support\Facades\Route;
 
 // Public landing page. Signed-in users get a link through to the ERP.
@@ -28,6 +29,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/courses', [CourseController::class, 'index'])->name('courses.index');
     Route::get('/courses/{course}', [CourseController::class, 'show'])->name('courses.show');
     Route::get('/batches/{batch}', [BatchController::class, 'show'])->name('batches.show');
+    Route::get('/batches/{batch}/timetable', [TimetableController::class, 'show'])->name('timetable.show');
+    Route::post('/batches/{batch}/timetable', [TimetableController::class, 'store'])->name('timetable.store');
 
     Route::get('/students', [StudentController::class, 'index'])->name('students.index');
     Route::get('/staff', [StaffController::class, 'index'])->name('staff.index');
